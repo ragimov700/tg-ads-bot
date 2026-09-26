@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tg_ads_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-tg_ads_bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment: &app_environment
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?Set TELEGRAM_CHAT_ID in .env}
+      ADS_API_TOKEN: ${ADS_API_TOKEN:?Set ADS_API_TOKEN in .env}
+      ADS_ACCOUNT_ID: ${ADS_ACCOUNT_ID:?Set ADS_ACCOUNT_ID in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tg_ads_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-tg_ads_bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      DB_HOST: db
+      DB_PORT: "5432"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  bot:
+    build: .
+    command: ["python", "-m", "app.bot.main"]
+    restart: unless-stopped
+    environment: *app_environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker.main"]
+    restart: unless-stopped
+    environment: *app_environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:

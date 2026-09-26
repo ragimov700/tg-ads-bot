@@ -1,0 +1,7 @@
+# Local-only override used for repository integration tests.
+services:
+  db:
+    environment:
+      POSTGRES_DB: tg_ads_bot_test
+    ports:
+      - "127.0.0.1:55432:5432"
