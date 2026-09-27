@@ -14,6 +14,66 @@ class ControlHelp:
         return f"{self.description}\n\n<b>Пример:</b> {self.example}"
 
 
+EVENT_TYPE_LABELS: dict[str, str] = {
+    "fraud_pause": "Объявление остановлено FraudGuard",
+    "performance_pause": "Объявление остановлено из-за плохого CPA",
+    "performance_warning": "Предупреждение о плохом CPA",
+    "cpm_increase": "CPM повышен",
+    "cpm_decrease": "CPM понижен",
+    "optimizer_no_change": "CPM оставлен без изменений",
+    "insufficient_sample": "Недостаточно данных для изменения CPM",
+    "budget_refill": "Бюджет пополнен",
+    "daily_budget_cap_reached": "Дневной лимит пополнений достигнут",
+    "budget_cap_reached": "Лимит бюджета достигнут",
+    "tracking_missing": "Отслеживание actions недоступно",
+    "worker_error": "Ошибка автоматики",
+    "settings_change": "Настройка изменена",
+}
+
+EVENT_STATUS_LABELS: dict[str, str] = {
+    "planned": "запланировано",
+    "running": "выполняется",
+    "succeeded": "успешно",
+    "failed": "ошибка",
+    "no_change": "без изменений",
+}
+
+SETTING_EVENT_LABELS: dict[str, str] = {
+    "master_enabled": "Общий статус",
+    "cpm_enabled": "Автоматическое управление CPM",
+    "budget_enabled": "Автоматическое пополнение бюджета",
+    "fraud_enabled": "FraudGuard",
+    "target_cpa": "Target CPA",
+    "min_cpm": "Минимальный CPM",
+    "max_cpm": "Максимальный CPM",
+    "budget_step": "Шаг бюджета",
+    "ad_budget_cap": "Дневной лимит пополнений",
+    "account_reserve": "Резерв кабинета",
+    "refill_threshold": "Порог пополнения",
+    "fraud_window_intervals": "Окно FraudGuard",
+    "fraud_min_views": "Минимум просмотров FraudGuard",
+    "fraud_min_spend": "Минимальный расход FraudGuard",
+    "monitor_interval_seconds": "Интервал мониторинга",
+    "optimizer_interval_seconds": "Интервал оптимизатора",
+    "optimizer_window_hours": "Окно CPA",
+    "fraud_unblock": "Блокировка FraudGuard снята",
+}
+
+
+def event_type_label(action_type: str, reason: str) -> str:
+    if action_type == "settings_change":
+        setting = SETTING_EVENT_LABELS.get(reason)
+        if reason == "fraud_unblock":
+            return setting or EVENT_TYPE_LABELS[action_type]
+        if setting is not None:
+            return f"Изменена настройка «{setting}»"
+    return EVENT_TYPE_LABELS.get(action_type, action_type)
+
+
+def event_status_label(status: str) -> str:
+    return EVENT_STATUS_LABELS.get(status, status)
+
+
 TOGGLE_HELP: dict[str, ControlHelp] = {
     "master": ControlHelp(
         "Главный выключатель автоматики. Когда он выключен, бот продолжает собирать "

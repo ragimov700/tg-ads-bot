@@ -15,7 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot.keyboards import confirmation, main_menu, statistics_periods
-from app.bot.texts import SETTING_HELP, TOGGLE_HELP
+from app.bot.texts import SETTING_HELP, TOGGLE_HELP, event_status_label, event_type_label
 from app.db.models import Settings
 from app.db.repositories import AutomationRepository, SettingsRepository
 from app.statistics.formatter import format_balance, format_period
@@ -414,10 +414,11 @@ def build_router(
             lines.append(f"Активных блокировок: <b>{len(blocks)}</b>")
             lines.append("")
         for action in actions:
-            ad = f"ad <code>{action.ad_id}</code> · " if action.ad_id is not None else ""
+            ad = f"объявление <code>{action.ad_id}</code> · " if action.ad_id is not None else ""
             lines.append(
                 f"{action.created_at:%d.%m %H:%M} · {ad}"
-                f"{escape(action.action_type)} · {escape(action.status)}"
+                f"{escape(event_type_label(action.action_type, action.reason))} · "
+                f"{escape(event_status_label(action.status))}"
             )
         keyboard = (
             InlineKeyboardMarkup(

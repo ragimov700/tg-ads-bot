@@ -3,7 +3,12 @@ from decimal import Decimal
 import pytest
 
 from app.bot.handlers import EDITABLE, TOGGLE_FIELDS, _validate_value
-from app.bot.texts import SETTING_HELP, TOGGLE_HELP
+from app.bot.texts import (
+    SETTING_HELP,
+    TOGGLE_HELP,
+    event_status_label,
+    event_type_label,
+)
 
 
 class Current:
@@ -39,3 +44,16 @@ def test_every_automation_control_has_description_and_example() -> None:
         assert help_text.description
         assert help_text.example
         assert "<b>Пример:</b>" in rendered
+
+
+def test_event_labels_are_translated_to_russian() -> None:
+    assert event_type_label("budget_refill", "low_budget") == "Бюджет пополнен"
+    assert event_type_label("worker_error", "TelegramAdsError") == "Ошибка автоматики"
+    assert event_type_label("settings_change", "budget_step") == "Изменена настройка «Шаг бюджета»"
+    assert event_status_label("succeeded") == "успешно"
+    assert event_status_label("no_change") == "без изменений"
+
+
+def test_unknown_event_values_are_left_readable() -> None:
+    assert event_type_label("future_event", "reason") == "future_event"
+    assert event_status_label("future_status") == "future_status"
