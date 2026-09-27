@@ -39,6 +39,8 @@ class FakeAds:
             status="active",
         )
         self.budget_calls: list[str] = []
+        self.stats_calls = 0
+        self.stats_failures_remaining = 0
         self.applied_keys: set[str] = set()
         self.edits: list[tuple[int, Decimal | None, bool | None]] = []
 
@@ -59,6 +61,10 @@ class FakeAds:
         return [self.ad]
 
     async def get_ad_stats(self, *args, **kwargs) -> list[AdStatItem]:
+        self.stats_calls += 1
+        if self.stats_failures_remaining:
+            self.stats_failures_remaining -= 1
+            raise TelegramAdsError("temporary stats failure", retryable=True)
         return [
             AdStatItem(
                 from_time=0,
@@ -130,24 +136,37 @@ async def test_master_switch_and_budget_recovery_are_idempotent() -> None:
             notifier=FakeNotifier(),
         )
 
-        await service.run_optimizer_cycle()
         await service.run_monitor_cycle()
         assert fake.budget_calls == []
         assert fake.edits == []
+        assert fake.stats_calls == 0
 
         await settings.update("master_enabled", True)
         await settings.update("ad_budget_cap", Decimal("0.10"))
+        fake.stats_failures_remaining = 1
+        await service.run_monitor_cycle()
+        assert fake.budget_calls == []
+        assert fake.stats_calls == 1
+        assert any(
+            action.action_type == "budget_refill_skipped"
+            and action.reason == "performance_data_unavailable"
+            for action in await repository.recent_actions()
+        )
+
         await service.run_monitor_cycle()
         assert len(fake.budget_calls) == 1
+        assert fake.stats_calls == 2
 
         await service.run_monitor_cycle()
         assert len(fake.budget_calls) == 2
         assert fake.budget_calls[0] == fake.budget_calls[1]
         assert fake.ad.remaining_budget == Decimal("0.11000")
+        assert fake.stats_calls == 2
 
         fake.ad = fake.ad.model_copy(update={"remaining_budget": Decimal("0.01")})
         await service.run_monitor_cycle()
         assert len(fake.budget_calls) == 2
+        assert fake.stats_calls == 3
         assert any(
             action.action_type == "daily_budget_cap_reached"
             for action in await repository.recent_actions()

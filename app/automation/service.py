@@ -67,7 +67,6 @@ class AutomationService:
         self.fraud_guard = FraudGuard()
         self.budget_manager = BudgetManager()
         self.optimizer = CpaOptimizer()
-        self.performance: dict[int, PerformanceSummary] = {}
         self._cycle_lock = asyncio.Lock()
 
     async def run_monitor_cycle(self) -> None:
@@ -95,11 +94,30 @@ class AutomationService:
                         "Live automation requires TON settings",
                     )
                     return
+                active_ads = [item for item in ads if item.status == "active"]
+                budget_candidates = (
+                    [
+                        ad
+                        for ad in active_ads
+                        if ad.action_type and ad.remaining_budget <= settings.refill_threshold
+                    ]
+                    if settings.master_enabled and settings.budget_enabled
+                    else []
+                )
+                budget_performance = await self._load_performance(
+                    budget_candidates, settings.optimizer_window_hours
+                )
                 balance = account.remaining_budget
-                for ad in (item for item in ads if item.status == "active"):
+                for ad in active_ads:
                     try:
                         spent = await self._process_monitored_ad(
-                            cycle_id, captured_at, account, ad, settings, balance
+                            cycle_id,
+                            captured_at,
+                            account,
+                            ad,
+                            settings,
+                            balance,
+                            budget_performance.get(ad.ad_id),
                         )
                         balance -= spent
                     except Exception as exc:  # noqa: BLE001 - one broken ad must not stop the portfolio
@@ -116,6 +134,7 @@ class AutomationService:
         ad: Ad,
         settings: Settings,
         available_balance: Decimal,
+        performance: PerformanceSummary | None,
     ) -> Decimal:
         if not ad.action_type:
             await self._ensure_tracking_notice(cycle_id, account.account_id, ad)
@@ -174,7 +193,7 @@ class AutomationService:
             automated_budget_today=automated_budget_today,
             account_balance=available_balance,
             currency=ad.currency,
-            performance=self.performance.get(ad.ad_id),
+            performance=performance,
             settings=rule_settings(settings),
         )
         if decision.kind == DecisionKind.BUDGET_CAP_REACHED:
@@ -190,6 +209,25 @@ class AutomationService:
                     account_id=account.account_id,
                     ad_id=ad.ad_id,
                     action_type="daily_budget_cap_reached",
+                    status="no_change",
+                    reason=decision.reason,
+                    metrics=decision.metrics,
+                )
+            return Decimal(0)
+        if decision.kind == DecisionKind.BUDGET_BLOCKED:
+            if not await self.repository.action_exists(
+                account.account_id,
+                ad.ad_id,
+                "budget_refill_skipped",
+                reason=decision.reason,
+                created_from=day_start,
+                created_to=day_end,
+            ):
+                await self.repository.create_action(
+                    cycle_id=cycle_id,
+                    account_id=account.account_id,
+                    ad_id=ad.ad_id,
+                    action_type="budget_refill_skipped",
                     status="no_change",
                     reason=decision.reason,
                     metrics=decision.metrics,
@@ -228,7 +266,6 @@ class AutomationService:
                     )
                     return
                 performance = await self._load_performance(ads, settings.optimizer_window_hours)
-                self.performance = performance
                 for ad in ads:
                     try:
                         if not ad.action_type:

@@ -23,11 +23,20 @@ EVENT_TYPE_LABELS: dict[str, str] = {
     "optimizer_no_change": "CPM оставлен без изменений",
     "insufficient_sample": "Недостаточно данных для изменения CPM",
     "budget_refill": "Бюджет пополнен",
+    "budget_refill_skipped": "Пополнение пропущено",
     "daily_budget_cap_reached": "Дневной лимит пополнений достигнут",
     "budget_cap_reached": "Лимит бюджета достигнут",
     "tracking_missing": "Отслеживание actions недоступно",
     "worker_error": "Ошибка автоматики",
     "settings_change": "Настройка изменена",
+}
+
+BUDGET_SKIP_LABELS: dict[str, str] = {
+    "performance_data_unavailable": "Пополнение пропущено: статистика CPA недоступна",
+    "cpa_is_not_acceptable": "Пополнение пропущено: CPA выше допустимого",
+    "account_reserve_would_be_violated": (
+        "Пополнение пропущено: недостаточно средств сверх резерва"
+    ),
 }
 
 EVENT_STATUS_LABELS: dict[str, str] = {
@@ -61,6 +70,8 @@ SETTING_EVENT_LABELS: dict[str, str] = {
 
 
 def event_type_label(action_type: str, reason: str) -> str:
+    if action_type == "budget_refill_skipped":
+        return BUDGET_SKIP_LABELS.get(reason, EVENT_TYPE_LABELS[action_type])
     if action_type == "settings_change":
         setting = SETTING_EVENT_LABELS.get(reason)
         if reason == "fraud_unblock":

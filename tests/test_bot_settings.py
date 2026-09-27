@@ -49,6 +49,10 @@ def test_every_automation_control_has_description_and_example() -> None:
 def test_event_labels_are_translated_to_russian() -> None:
     assert event_type_label("budget_refill", "low_budget") == "Бюджет пополнен"
     assert event_type_label("worker_error", "TelegramAdsError") == "Ошибка автоматики"
+    assert (
+        event_type_label("budget_refill_skipped", "performance_data_unavailable")
+        == "Пополнение пропущено: статистика CPA недоступна"
+    )
     assert event_type_label("settings_change", "budget_step") == "Изменена настройка «Шаг бюджета»"
     assert event_status_label("succeeded") == "успешно"
     assert event_status_label("no_change") == "без изменений"

@@ -174,6 +174,7 @@ class AutomationRepository:
         ad_id: int,
         action_type: str,
         *,
+        reason: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
     ) -> bool:
@@ -183,6 +184,8 @@ class AutomationRepository:
                 AutomationAction.ad_id == ad_id,
                 AutomationAction.action_type == action_type,
             )
+            if reason is not None:
+                statement = statement.where(AutomationAction.reason == reason)
             if created_from is not None:
                 statement = statement.where(AutomationAction.created_at >= created_from)
             if created_to is not None:
