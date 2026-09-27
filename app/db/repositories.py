@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.automation.rules import RuleSettings
@@ -70,7 +70,7 @@ def rule_settings(settings: Settings) -> RuleSettings:
         min_cpm=settings.min_cpm,
         max_cpm=settings.max_cpm,
         budget_step=settings.budget_step,
-        ad_budget_cap=settings.ad_budget_cap,
+        daily_budget_cap=settings.ad_budget_cap,
         account_reserve=settings.account_reserve,
         refill_threshold=settings.refill_threshold,
         fraud_min_views=settings.fraud_min_views,
@@ -168,19 +168,46 @@ class AutomationRepository:
             if pending_until is not ...:
                 action.pending_until = pending_until  # type: ignore[assignment]
 
-    async def action_exists(self, account_id: str, ad_id: int, action_type: str) -> bool:
+    async def action_exists(
+        self,
+        account_id: str,
+        ad_id: int,
+        action_type: str,
+        *,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> bool:
         async with self.sessions() as session:
-            return (
-                await session.scalar(
-                    select(AutomationAction.id)
-                    .where(
-                        AutomationAction.account_id == account_id,
-                        AutomationAction.ad_id == ad_id,
-                        AutomationAction.action_type == action_type,
-                    )
-                    .limit(1)
+            statement = select(AutomationAction.id).where(
+                AutomationAction.account_id == account_id,
+                AutomationAction.ad_id == ad_id,
+                AutomationAction.action_type == action_type,
+            )
+            if created_from is not None:
+                statement = statement.where(AutomationAction.created_at >= created_from)
+            if created_to is not None:
+                statement = statement.where(AutomationAction.created_at < created_to)
+            return (await session.scalar(statement.limit(1))) is not None
+
+    async def successful_budget_total(
+        self,
+        account_id: str,
+        ad_id: int,
+        *,
+        updated_from: datetime,
+        updated_to: datetime,
+    ) -> Decimal:
+        async with self.sessions() as session:
+            value = await session.scalar(
+                select(func.coalesce(func.sum(BudgetOperation.amount), Decimal(0))).where(
+                    BudgetOperation.account_id == account_id,
+                    BudgetOperation.ad_id == ad_id,
+                    BudgetOperation.status == "succeeded",
+                    BudgetOperation.updated_at >= updated_from,
+                    BudgetOperation.updated_at < updated_to,
                 )
-            ) is not None
+            )
+            return Decimal(value or 0)
 
     async def active_block(self, account_id: str, ad_id: int) -> AutomationAction | None:
         async with self.sessions() as session:

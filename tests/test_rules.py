@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.automation.rules import (
@@ -10,6 +11,7 @@ from app.automation.rules import (
     SnapshotMetrics,
     round_cpm,
 )
+from app.automation.service import _budget_day_bounds
 
 
 def settings() -> RuleSettings:
@@ -18,7 +20,7 @@ def settings() -> RuleSettings:
         min_cpm=Decimal("0.10"),
         max_cpm=Decimal("1.00"),
         budget_step=Decimal("0.10"),
-        ad_budget_cap=Decimal("1.00"),
+        daily_budget_cap=Decimal("1.00"),
         account_reserve=Decimal("1.00"),
         refill_threshold=Decimal("0.02"),
         fraud_min_views=20_000,
@@ -126,8 +128,9 @@ def test_zero_actions_uses_stop_spend_threshold() -> None:
 def test_budget_refill_respects_cap_reserve_and_bad_cpa() -> None:
     manager = BudgetManager()
     good = manager.evaluate(
-        spent_budget=Decimal("0.50"),
+        spent_budget=Decimal("50.00"),
         remaining_budget=Decimal("0.01"),
+        automated_budget_today=Decimal(0),
         account_balance=Decimal("2.00"),
         currency="TON",
         performance=PerformanceSummary(spend=Decimal("0.50"), actions=3),
@@ -137,8 +140,9 @@ def test_budget_refill_respects_cap_reserve_and_bad_cpa() -> None:
     assert good.new_value == Decimal("0.10000")
 
     cap = manager.evaluate(
-        spent_budget=Decimal("0.99"),
+        spent_budget=Decimal("0.50"),
         remaining_budget=Decimal("0.01"),
+        automated_budget_today=Decimal("1.00"),
         account_balance=Decimal("2.00"),
         currency="TON",
         performance=PerformanceSummary(spend=Decimal("0.50"), actions=3),
@@ -149,6 +153,7 @@ def test_budget_refill_respects_cap_reserve_and_bad_cpa() -> None:
     reserve = manager.evaluate(
         spent_budget=Decimal("0.50"),
         remaining_budget=Decimal("0.01"),
+        automated_budget_today=Decimal(0),
         account_balance=Decimal("1.05"),
         currency="TON",
         performance=PerformanceSummary(spend=Decimal("0.50"), actions=3),
@@ -159,12 +164,35 @@ def test_budget_refill_respects_cap_reserve_and_bad_cpa() -> None:
     bad = manager.evaluate(
         spent_budget=Decimal("0.50"),
         remaining_budget=Decimal("0.01"),
+        automated_budget_today=Decimal(0),
         account_balance=Decimal("2.00"),
         currency="TON",
         performance=PerformanceSummary(spend=Decimal("0.90"), actions=2),
         settings=settings(),
     )
     assert bad.kind == DecisionKind.BUDGET_BLOCKED
+
+
+def test_budget_refill_uses_only_remaining_daily_capacity() -> None:
+    result = BudgetManager().evaluate(
+        spent_budget=Decimal(100),
+        remaining_budget=Decimal("0.01"),
+        automated_budget_today=Decimal("0.95"),
+        account_balance=Decimal("2.00"),
+        currency="TON",
+        performance=PerformanceSummary(spend=Decimal("0.50"), actions=3),
+        settings=settings(),
+    )
+
+    assert result.kind == DecisionKind.BUDGET_REFILL
+    assert result.new_value == Decimal("0.05000")
+
+
+def test_budget_day_resets_at_moscow_midnight() -> None:
+    start, end = _budget_day_bounds(datetime(2026, 9, 27, 22, 30, tzinfo=UTC), "Europe/Moscow")
+
+    assert start == datetime(2026, 9, 27, 21, tzinfo=UTC)
+    assert end == datetime(2026, 9, 28, 21, tzinfo=UTC)
 
 
 def test_xtr_cpm_rounds_to_integer() -> None:

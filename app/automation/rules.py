@@ -28,7 +28,7 @@ class RuleSettings:
     min_cpm: Decimal
     max_cpm: Decimal
     budget_step: Decimal
-    ad_budget_cap: Decimal
+    daily_budget_cap: Decimal
     account_reserve: Decimal
     refill_threshold: Decimal
     fraud_min_views: int
@@ -193,6 +193,7 @@ class BudgetManager:
         *,
         spent_budget: Decimal,
         remaining_budget: Decimal,
+        automated_budget_today: Decimal,
         account_balance: Decimal,
         currency: str,
         performance: PerformanceSummary | None,
@@ -200,18 +201,18 @@ class BudgetManager:
     ) -> RuleDecision:
         if remaining_budget > settings.refill_threshold:
             return RuleDecision(DecisionKind.NO_CHANGE, "budget_is_sufficient")
-        allocated = spent_budget + remaining_budget
         metrics = {
             "spent_budget": str(spent_budget),
             "remaining_budget": str(remaining_budget),
-            "allocated_budget": str(allocated),
+            "automated_budget_today": str(automated_budget_today),
+            "daily_budget_cap": str(settings.daily_budget_cap),
             "account_balance": str(account_balance),
         }
-        capacity = settings.ad_budget_cap - allocated
+        capacity = settings.daily_budget_cap - automated_budget_today
         if capacity <= ZERO:
             return RuleDecision(
                 DecisionKind.BUDGET_CAP_REACHED,
-                "ad_budget_cap_reached",
+                "daily_budget_cap_reached",
                 metrics=metrics,
             )
         if performance is None:

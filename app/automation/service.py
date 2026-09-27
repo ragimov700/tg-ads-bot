@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -32,6 +33,13 @@ from app.telegram_ads.exceptions import TelegramAdsError
 from app.telegram_ads.schemas import Account, Ad, AdStatItem
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _budget_day_bounds(moment: datetime, timezone_name: str) -> tuple[datetime, datetime]:
+    timezone = ZoneInfo(timezone_name)
+    local_start = moment.astimezone(timezone).replace(hour=0, minute=0, second=0, microsecond=0)
+    local_end = local_start + timedelta(days=1)
+    return local_start.astimezone(UTC), local_end.astimezone(UTC)
 
 
 class AutomationNotifier(Protocol):
@@ -151,9 +159,19 @@ class AutomationService:
             account.account_id, ad.ad_id
         ):
             return Decimal(0)
+        automated_budget_today = Decimal(0)
+        day_start, day_end = _budget_day_bounds(captured_at, settings.timezone)
+        if ad.remaining_budget <= settings.refill_threshold:
+            automated_budget_today = await self.repository.successful_budget_total(
+                account.account_id,
+                ad.ad_id,
+                updated_from=day_start,
+                updated_to=day_end,
+            )
         decision = self.budget_manager.evaluate(
             spent_budget=ad.spent_budget,
             remaining_budget=ad.remaining_budget,
+            automated_budget_today=automated_budget_today,
             account_balance=available_balance,
             currency=ad.currency,
             performance=self.performance.get(ad.ad_id),
@@ -161,13 +179,17 @@ class AutomationService:
         )
         if decision.kind == DecisionKind.BUDGET_CAP_REACHED:
             if not await self.repository.action_exists(
-                account.account_id, ad.ad_id, "budget_cap_reached"
+                account.account_id,
+                ad.ad_id,
+                "daily_budget_cap_reached",
+                created_from=day_start,
+                created_to=day_end,
             ):
                 await self.repository.create_action(
                     cycle_id=cycle_id,
                     account_id=account.account_id,
                     ad_id=ad.ad_id,
-                    action_type="budget_cap_reached",
+                    action_type="daily_budget_cap_reached",
                     status="no_change",
                     reason=decision.reason,
                     metrics=decision.metrics,

@@ -2,7 +2,8 @@ from decimal import Decimal
 
 import pytest
 
-from app.bot.handlers import EDITABLE, _validate_value
+from app.bot.handlers import EDITABLE, TOGGLE_FIELDS, _validate_value
+from app.bot.texts import SETTING_HELP, TOGGLE_HELP
 
 
 class Current:
@@ -27,3 +28,14 @@ def test_monitor_interval_must_be_a_multiple_of_five_minutes() -> None:
 def test_cross_field_budget_validation() -> None:
     with pytest.raises(ValueError):
         _validate_value("budget_step", Decimal(2), Current())
+
+
+def test_every_automation_control_has_description_and_example() -> None:
+    assert SETTING_HELP.keys() == EDITABLE.keys()
+    assert TOGGLE_HELP.keys() == TOGGLE_FIELDS.keys()
+
+    for help_text in (*SETTING_HELP.values(), *TOGGLE_HELP.values()):
+        rendered = help_text.render()
+        assert help_text.description
+        assert help_text.example
+        assert "<b>Пример:</b>" in rendered

@@ -15,6 +15,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot.keyboards import confirmation, main_menu, statistics_periods
+from app.bot.texts import SETTING_HELP, TOGGLE_HELP
 from app.db.models import Settings
 from app.db.repositories import AutomationRepository, SettingsRepository
 from app.statistics.formatter import format_balance, format_period
@@ -64,7 +65,7 @@ EDITABLE = {
     "min_cpm": EditableSetting("Минимальный CPM", "TON"),
     "max_cpm": EditableSetting("Максимальный CPM", "TON"),
     "budget_step": EditableSetting("Шаг бюджета", "TON"),
-    "ad_budget_cap": EditableSetting("Лимит объявления", "TON"),
+    "ad_budget_cap": EditableSetting("Дневной лимит пополнений", "TON"),
     "account_reserve": EditableSetting("Резерв кабинета", "TON"),
     "refill_threshold": EditableSetting("Порог пополнения", "TON"),
     "fraud_window_intervals": EditableSetting("Окно FraudGuard", "интервалов", True),
@@ -94,7 +95,7 @@ def _automation_text(settings: Settings) -> str:
         f"FraudGuard: {_enabled(settings.fraud_enabled)}\n\n"
         f"Target CPA: <b>{settings.target_cpa} TON</b>\n"
         f"CPM: {settings.min_cpm}–{settings.max_cpm} TON\n"
-        f"Budget step/cap: {settings.budget_step}/{settings.ad_budget_cap} TON\n"
+        f"Шаг/дневной лимит: {settings.budget_step}/{settings.ad_budget_cap} TON\n"
         f"Резерв: {settings.account_reserve} TON\n"
         f"Мониторинг: {settings.monitor_interval_seconds // 60} мин\n"
         f"Оптимизатор: {settings.optimizer_interval_seconds // 3600} ч\n"
@@ -147,9 +148,9 @@ def _validate_value(field: str, value: Decimal | int, settings: Settings) -> Non
     if field == "max_cpm" and Decimal(value) < settings.min_cpm:
         raise ValueError("Максимальный CPM не может быть меньше минимального")
     if field == "budget_step" and Decimal(value) > settings.ad_budget_cap:
-        raise ValueError("Шаг бюджета не может превышать лимит объявления")
+        raise ValueError("Шаг бюджета не может превышать дневной лимит пополнений")
     if field == "ad_budget_cap" and Decimal(value) < settings.budget_step:
-        raise ValueError("Лимит объявления не может быть меньше шага бюджета")
+        raise ValueError("Дневной лимит не может быть меньше шага бюджета")
     if field == "refill_threshold" and Decimal(value) > settings.budget_step:
         raise ValueError("Порог пополнения не может превышать шаг бюджета")
     if field == "monitor_interval_seconds" and (int(value) < 300 or int(value) % 300):
@@ -271,6 +272,32 @@ def build_router(
             return
         current = await settings_repository.get()
         new_value = not getattr(current, field)
+        help_text = TOGGLE_HELP[key]
+        if callback.message is not None:
+            await callback.message.answer(
+                f"<b>{'Включение' if new_value else 'Выключение'} настройки</b>\n\n"
+                f"{help_text.render()}\n\n"
+                f"Сейчас: <b>{'включено' if not new_value else 'выключено'}</b>\n"
+                f"После изменения: <b>{'включено' if new_value else 'выключено'}</b>\n\n"
+                "Применить изменение?",
+                reply_markup=confirmation(
+                    f"toggle_confirm:{key}:{int(new_value)}", "toggle_cancel"
+                ),
+            )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("toggle_confirm:"))
+    async def toggle_confirm(callback: CallbackQuery) -> None:
+        _, key, raw_value = callback.data.split(":", 2)
+        field = TOGGLE_FIELDS.get(key)
+        if field is None or raw_value not in {"0", "1"}:
+            await callback.answer("Неизвестная настройка", show_alert=True)
+            return
+        new_value = raw_value == "1"
+        current = await settings_repository.get()
+        if getattr(current, field) == new_value:
+            await callback.answer("Это значение уже установлено", show_alert=True)
+            return
         if field == "master_enabled" and new_value:
             try:
                 _validate_configuration(current)
@@ -306,9 +333,12 @@ def build_router(
         await state.set_state(EditSetting.value)
         await state.update_data(field=field)
         if callback.message is not None:
+            help_text = SETTING_HELP[field]
             await callback.message.answer(
-                f"Введите новое значение для «{spec.label}».\n"
+                f"<b>{spec.label}</b>\n\n"
+                f"{help_text.render()}\n\n"
                 f"Сейчас: <b>{spec.display(getattr(settings, field))}</b>\n\n"
+                "Введите новое значение.\n"
                 "Для отмены: /cancel"
             )
         await callback.answer()
@@ -361,7 +391,7 @@ def build_router(
             await callback.message.answer("Настройка сохранена.", reply_markup=main_menu())
         await callback.answer()
 
-    @router.callback_query(F.data.in_({"setting_cancel", "cancel"}))
+    @router.callback_query(F.data.in_({"setting_cancel", "toggle_cancel", "cancel"}))
     async def cancel_callback(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         await callback.answer("Отменено")

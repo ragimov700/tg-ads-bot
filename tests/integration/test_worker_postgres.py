@@ -136,6 +136,7 @@ async def test_master_switch_and_budget_recovery_are_idempotent() -> None:
         assert fake.edits == []
 
         await settings.update("master_enabled", True)
+        await settings.update("ad_budget_cap", Decimal("0.10"))
         await service.run_monitor_cycle()
         assert len(fake.budget_calls) == 1
 
@@ -143,6 +144,14 @@ async def test_master_switch_and_budget_recovery_are_idempotent() -> None:
         assert len(fake.budget_calls) == 2
         assert fake.budget_calls[0] == fake.budget_calls[1]
         assert fake.ad.remaining_budget == Decimal("0.11000")
+
+        fake.ad = fake.ad.model_copy(update={"remaining_budget": Decimal("0.01")})
+        await service.run_monitor_cycle()
+        assert len(fake.budget_calls) == 2
+        assert any(
+            action.action_type == "daily_budget_cap_reached"
+            for action in await repository.recent_actions()
+        )
     finally:
         await engine.dispose()
         async with admin.begin() as connection:

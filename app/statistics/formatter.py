@@ -29,7 +29,8 @@ def format_period(stats: PeriodStatistics) -> str:
         f"Без изменений: {counts.get('optimizer_no_change', 0)}\n"
         f"Бюджет пополнен: {counts.get('budget_refill', 0)}\n"
         f"Остановлено как подозрительное: {counts.get('fraud_pause', 0)}\n"
-        f"Достигли лимита бюджета: {counts.get('budget_cap_reached', 0)}"
+        "Достигли дневного лимита: "
+        f"{counts.get('daily_budget_cap_reached', 0) + counts.get('budget_cap_reached', 0)}"
     )
 
 
