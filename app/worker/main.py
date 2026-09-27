@@ -77,8 +77,8 @@ async def run_worker() -> None:
             async def optimizer_interval() -> int:
                 return (await settings_repository.get()).optimizer_interval_seconds
 
-            await _safe_call(service.run_optimizer_cycle)
             await _safe_call(service.run_monitor_cycle)
+            await _safe_call(service.run_optimizer_cycle)
             await asyncio.gather(
                 _loop(service.run_monitor_cycle, monitor_interval, stop),
                 _loop(service.run_optimizer_cycle, optimizer_interval, stop),

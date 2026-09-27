@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from app.telegram_ads.client import TelegramAdsClient
+from app.telegram_ads.client import (
+    TelegramAdsClient,
+    _api_error_code,
+    _is_retryable_api_error,
+)
 
 
 def ad(ad_id: int) -> dict[str, object]:
@@ -62,3 +66,19 @@ async def test_get_ads_by_id_serializes_the_list() -> None:
     result = await client.get_ads_by_id([10, 11])
     assert [item.ad_id for item in result] == [10, 11]
     assert client.calls[0][1]["ad_ids"] == "[10, 11]"
+
+
+def test_api_error_code_keeps_only_safe_machine_code() -> None:
+    assert _api_error_code({"ok": False, "error": "RATE_LIMIT_EXCEEDED"}) == ("RATE_LIMIT_EXCEEDED")
+    assert (
+        _api_error_code(
+            {"ok": False, "error": {"code": "AUTH_KEY_INVALID", "message": "secret detail"}}
+        )
+        == "AUTH_KEY_INVALID"
+    )
+
+
+def test_transient_api_error_codes_are_retryable() -> None:
+    assert _is_retryable_api_error("RATE_LIMIT_EXCEEDED")
+    assert _is_retryable_api_error("FLOOD_WAIT_10")
+    assert not _is_retryable_api_error("AUTH_KEY_INVALID")

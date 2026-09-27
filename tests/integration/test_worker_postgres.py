@@ -141,8 +141,14 @@ async def test_master_switch_and_budget_recovery_are_idempotent() -> None:
         assert fake.edits == []
         assert fake.stats_calls == 0
 
+        await service.run_optimizer_cycle()
+        assert fake.stats_calls == 0
+
         await settings.update("master_enabled", True)
+        await settings.update("cpm_enabled", False)
         await settings.update("ad_budget_cap", Decimal("0.10"))
+        await service.run_optimizer_cycle()
+        assert fake.stats_calls == 0
         fake.stats_failures_remaining = 1
         await service.run_monitor_cycle()
         assert fake.budget_calls == []

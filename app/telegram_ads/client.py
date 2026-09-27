@@ -20,6 +20,32 @@ ACCOUNTS = TypeAdapter(list[Account])
 ADS = TypeAdapter(list[Ad])
 STATS = TypeAdapter(list[AdStatItem])
 RETRYABLE_API_ERRORS = {"INTERNAL_SERVER_ERROR", "IDEMPOTENT_REQUEST_IN_PROGRESS"}
+RETRYABLE_API_ERROR_MARKERS = ("FLOOD", "RATE_LIMIT", "TOO_MANY", "RETRY")
+
+
+def _api_error_code(body: object) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if isinstance(error, str):
+        return error[:128]
+    if isinstance(error, dict):
+        for key in ("code", "type"):
+            value = error.get(key)
+            if isinstance(value, str):
+                return value[:128]
+            if isinstance(value, int):
+                return str(value)
+    return "UNKNOWN_ERROR"
+
+
+def _is_retryable_api_error(code: str | None) -> bool:
+    if code is None:
+        return False
+    normalized = code.upper()
+    return normalized in RETRYABLE_API_ERRORS or any(
+        marker in normalized for marker in RETRYABLE_API_ERROR_MARKERS
+    )
 
 
 def _json_value(value: object) -> object:
@@ -112,15 +138,11 @@ class TelegramAdsClient:
                             ambiguous=http_method == "POST",
                         )
                     if not isinstance(body, dict) or body.get("ok") is not True:
-                        code = (
-                            str(body.get("error", "UNKNOWN_ERROR"))
-                            if isinstance(body, dict)
-                            else None
-                        )
+                        code = _api_error_code(body)
                         raise TelegramAdsError(
                             "Telegram Ads API rejected the request",
                             code=code,
-                            retryable=code in RETRYABLE_API_ERRORS,
+                            retryable=_is_retryable_api_error(code),
                             ambiguous=code == "IDEMPOTENT_REQUEST_IN_PROGRESS",
                         )
                     if "result" not in body:
@@ -137,6 +159,12 @@ class TelegramAdsClient:
                 last_error.__cause__ = exc
 
             if not retryable_request or not last_error.retryable or attempt == attempts - 1:
+                LOGGER.warning(
+                    "Telegram Ads method %s failed: code=%s retryable=%s",
+                    method,
+                    last_error.code or type(last_error).__name__,
+                    last_error.retryable,
+                )
                 raise last_error
             delay = self._retry_delays[attempt]
             LOGGER.warning("Retrying Telegram Ads method %s after a transient failure", method)

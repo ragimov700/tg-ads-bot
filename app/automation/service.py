@@ -69,6 +69,12 @@ class AutomationService:
         self.optimizer = CpaOptimizer()
         self._cycle_lock = asyncio.Lock()
 
+    @staticmethod
+    def _safe_error_code(exc: Exception) -> str:
+        if isinstance(exc, TelegramAdsError) and exc.code:
+            return exc.code
+        return type(exc).__name__
+
     async def run_monitor_cycle(self) -> None:
         async with self._cycle_lock:
             await self._run_monitor_cycle_locked()
@@ -124,7 +130,9 @@ class AutomationService:
                         await self._record_ad_error(cycle_id, account.account_id, ad.ad_id, exc)
             except Exception as exc:
                 LOGGER.exception("Monitor cycle failed")
-                await self._record_cycle_error(cycle_id, self.ads.account_id, type(exc).__name__)
+                await self._record_cycle_error(
+                    cycle_id, self.ads.account_id, self._safe_error_code(exc)
+                )
 
     async def _process_monitored_ad(
         self,
@@ -258,6 +266,8 @@ class AutomationService:
             try:
                 await self._reconcile_edits()
                 settings = await self.settings_repository.get()
+                if not settings.master_enabled or not settings.cpm_enabled:
+                    return
                 account = await self.ads.get_account()
                 ads = [ad for ad in await self.ads.get_ads() if ad.status == "active"]
                 if settings.master_enabled and account.currency != "TON":
@@ -302,7 +312,9 @@ class AutomationService:
                         await self._record_ad_error(cycle_id, account.account_id, ad.ad_id, exc)
             except Exception as exc:
                 LOGGER.exception("Optimizer cycle failed")
-                await self._record_cycle_error(cycle_id, self.ads.account_id, type(exc).__name__)
+                await self._record_cycle_error(
+                    cycle_id, self.ads.account_id, self._safe_error_code(exc)
+                )
 
     async def _load_performance(
         self, ads: list[Ad], window_hours: int
@@ -323,9 +335,12 @@ class AutomationService:
         result: dict[int, PerformanceSummary] = {}
         for ad_id, value in await asyncio.gather(*(load(ad) for ad in ads)):
             if isinstance(value, Exception):
-                LOGGER.warning(
-                    "Could not load performance for ad %s: %s", ad_id, type(value).__name__
+                code = (
+                    value.code
+                    if isinstance(value, TelegramAdsError) and value.code
+                    else type(value).__name__
                 )
+                LOGGER.warning("Could not load performance for ad %s: code=%s", ad_id, code)
             else:
                 result[ad_id] = value
         return result
