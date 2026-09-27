@@ -243,6 +243,15 @@ class AutomationService:
             return Decimal(0)
         if decision.kind != DecisionKind.BUDGET_REFILL or decision.new_value is None:
             return Decimal(0)
+        if await self.repository.failed_budget_operation_exists(
+            account.account_id,
+            ad.ad_id,
+            decision.new_value,
+            "AD_RESULT_BUDGET_TOO_SMALL",
+            updated_from=day_start,
+            updated_to=day_end,
+        ):
+            return Decimal(0)
         succeeded = await self._execute_budget_refill(
             cycle_id,
             account.account_id,

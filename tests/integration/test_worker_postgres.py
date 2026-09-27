@@ -41,6 +41,7 @@ class FakeAds:
         self.budget_calls: list[str] = []
         self.stats_calls = 0
         self.stats_failures_remaining = 0
+        self.budget_error_code: str | None = None
         self.applied_keys: set[str] = set()
         self.edits: list[tuple[int, Decimal | None, bool | None]] = []
 
@@ -84,6 +85,12 @@ class FakeAds:
 
     async def increase_ad_budget(self, ad_id: int, amount: Decimal, idempotency_key: str) -> Ad:
         self.budget_calls.append(idempotency_key)
+        if self.budget_error_code is not None:
+            raise TelegramAdsError(
+                "budget rejected",
+                code=self.budget_error_code,
+                retryable=False,
+            )
         if idempotency_key not in self.applied_keys:
             self.applied_keys.add(idempotency_key)
             self.ad = self.ad.model_copy(
@@ -177,6 +184,29 @@ async def test_master_switch_and_budget_recovery_are_idempotent() -> None:
             action.action_type == "daily_budget_cap_reached"
             for action in await repository.recent_actions()
         )
+
+        fake.ad = fake.ad.model_copy(update={"ad_id": 2, "remaining_budget": Decimal("0.01")})
+        fake.budget_error_code = "AD_RESULT_BUDGET_TOO_SMALL"
+        await settings.update("ad_budget_cap", Decimal("2.00"))
+        await settings.update("budget_step", Decimal("0.50"))
+        calls_before_failure = len(fake.budget_calls)
+
+        await service.run_monitor_cycle()
+        await service.run_monitor_cycle()
+        assert len(fake.budget_calls) == calls_before_failure + 1
+        failed_refills = [
+            action
+            for action in await repository.recent_actions()
+            if action.ad_id == 2
+            and action.action_type == "budget_refill"
+            and action.status == "failed"
+        ]
+        assert len(failed_refills) == 1
+        assert failed_refills[0].error == "AD_RESULT_BUDGET_TOO_SMALL"
+
+        await settings.update("budget_step", Decimal("1.00"))
+        await service.run_monitor_cycle()
+        assert len(fake.budget_calls) == calls_before_failure + 2
     finally:
         await engine.dispose()
         async with admin.begin() as connection:

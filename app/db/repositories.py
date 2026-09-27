@@ -212,6 +212,30 @@ class AutomationRepository:
             )
             return Decimal(value or 0)
 
+    async def failed_budget_operation_exists(
+        self,
+        account_id: str,
+        ad_id: int,
+        amount: Decimal,
+        error: str,
+        *,
+        updated_from: datetime,
+        updated_to: datetime,
+    ) -> bool:
+        async with self.sessions() as session:
+            operation_id = await session.scalar(
+                select(BudgetOperation.id).where(
+                    BudgetOperation.account_id == account_id,
+                    BudgetOperation.ad_id == ad_id,
+                    BudgetOperation.amount == amount,
+                    BudgetOperation.status == "failed",
+                    BudgetOperation.error == error,
+                    BudgetOperation.updated_at >= updated_from,
+                    BudgetOperation.updated_at < updated_to,
+                )
+            )
+            return operation_id is not None
+
     async def active_block(self, account_id: str, ad_id: int) -> AutomationAction | None:
         async with self.sessions() as session:
             return await session.scalar(

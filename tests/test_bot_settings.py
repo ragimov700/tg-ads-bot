@@ -6,6 +6,7 @@ from app.bot.handlers import EDITABLE, TOGGLE_FIELDS, _validate_value
 from app.bot.texts import (
     SETTING_HELP,
     TOGGLE_HELP,
+    event_error_label,
     event_status_label,
     event_type_label,
 )
@@ -48,6 +49,7 @@ def test_every_automation_control_has_description_and_example() -> None:
 
 def test_event_labels_are_translated_to_russian() -> None:
     assert event_type_label("budget_refill", "low_budget") == "Бюджет пополнен"
+    assert event_type_label("budget_refill", "low_budget", "failed") == "Пополнение бюджета"
     assert event_type_label("worker_error", "TelegramAdsError") == "Ошибка автоматики"
     assert (
         event_type_label("budget_refill_skipped", "performance_data_unavailable")
@@ -56,6 +58,11 @@ def test_event_labels_are_translated_to_russian() -> None:
     assert event_type_label("settings_change", "budget_step") == "Изменена настройка «Шаг бюджета»"
     assert event_status_label("succeeded") == "успешно"
     assert event_status_label("no_change") == "без изменений"
+    assert (
+        event_error_label("AD_RESULT_BUDGET_TOO_SMALL")
+        == "сумма пополнения слишком мала — увеличьте «Шаг бюджета»"
+    )
+    assert event_error_label("UNKNOWN_ERROR") is None
 
 
 def test_unknown_event_values_are_left_readable() -> None:

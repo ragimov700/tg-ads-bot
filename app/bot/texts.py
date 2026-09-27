@@ -47,6 +47,10 @@ EVENT_STATUS_LABELS: dict[str, str] = {
     "no_change": "без изменений",
 }
 
+EVENT_ERROR_LABELS: dict[str, str] = {
+    "AD_RESULT_BUDGET_TOO_SMALL": ("сумма пополнения слишком мала — увеличьте «Шаг бюджета»"),
+}
+
 SETTING_EVENT_LABELS: dict[str, str] = {
     "master_enabled": "Общий статус",
     "cpm_enabled": "Автоматическое управление CPM",
@@ -69,7 +73,9 @@ SETTING_EVENT_LABELS: dict[str, str] = {
 }
 
 
-def event_type_label(action_type: str, reason: str) -> str:
+def event_type_label(action_type: str, reason: str, status: str | None = None) -> str:
+    if action_type == "budget_refill" and status not in {None, "succeeded"}:
+        return "Пополнение бюджета"
     if action_type == "budget_refill_skipped":
         return BUDGET_SKIP_LABELS.get(reason, EVENT_TYPE_LABELS[action_type])
     if action_type == "settings_change":
@@ -83,6 +89,12 @@ def event_type_label(action_type: str, reason: str) -> str:
 
 def event_status_label(status: str) -> str:
     return EVENT_STATUS_LABELS.get(status, status)
+
+
+def event_error_label(error: str | None) -> str | None:
+    if error is None:
+        return None
+    return EVENT_ERROR_LABELS.get(error)
 
 
 TOGGLE_HELP: dict[str, ControlHelp] = {
@@ -139,8 +151,11 @@ SETTING_HELP: dict[str, ControlHelp] = {
     ),
     "budget_step": ControlHelp(
         "Максимальная сумма одного автоматического пополнения. Фактическая сумма может "
-        "быть меньше, если до дневного лимита осталось меньше установленного шага.",
-        "при шаге 0.50 TON и остатке дневного лимита 0.20 TON бот добавит только 0.20 TON.",
+        "быть меньше, если до дневного лимита осталось меньше установленного шага. "
+        "Telegram Ads отклоняет слишком маленькие пополнения; в текущем TON-кабинете "
+        "используйте шаг не меньше 1.00 TON.",
+        "при шаге 1.00 TON и дневном лимите 2.00 TON бот сможет добавить по 1.00 TON "
+        "не более двух раз за день.",
     ),
     "ad_budget_cap": ControlHelp(
         "Максимальная сумма, которую бот может автоматически добавить одному объявлению "
